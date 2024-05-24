@@ -9,7 +9,7 @@ import os
 HF_USERNAME = "LukeGPT88"
 PROJECT_NAME = "patient-doctor-text-classifier"
 SUB_PROJECT_NAME = "eng"
-TASK = f"{PROJECT_NAME}-{SUB_PROJECT_NAME}"
+TASK = f"{PROJECT_NAME}-{SUB_PROJECT_NAME}-0523"
 
 FOLDERPATH = 'PulsarSearchesExport'
 TOPIC_CC = 'HavasGlobal-Lupus'
@@ -60,7 +60,7 @@ for i, (account, user, content, bio) in enumerate(tot_rows):
   meaningful_content = get_meaningful_text(content)
   if len(meaningful_content) <= 500:
     if type(bio) != str:
-      meaningful_bio = ''
+      meaningful_bio = 'None'
     else:
       meaningful_bio = get_meaningful_text(bio)
     outcomes.append({"account": account, "user": user, "content": {**{"text": content}, **classifier(meaningful_content)[0]}, "bio": {**{"text": bio}, **classifier(meaningful_bio)[0]}})
