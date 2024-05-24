@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import re
 from transformers import pipeline
 import csv
 import os
@@ -36,14 +37,33 @@ def get_csv_file(data, split=0):
     if(os.path.exists(filename_old) and os.path.isfile(filename_old)):
       os.remove(filename_old)
 
+def get_meaningful_text(text):
+  """
+    Remove meaningless words like everything starting with '#', '@', or containing 'http'
+  """
+  # Define the regex pattern to match words starting with '@', '#', or 'http'
+  # pattern = r'\b(@\w+|#\w+|http\S*)'
+  pattern = r'\B@\w+|#\w+|http\S*'
+
+  # Use re.sub to replace words starting with '@', '#', or 'http' with an empty string
+  cleaned_text = re.sub(pattern, '', text)
+
+  # Optional: Clean up any extra spaces created by the replacements
+  cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+
+  return cleaned_text
+
 classifier = pipeline("text-classification", model=f"{HF_USERNAME}/{TASK}")
 outcomes = []
 tot_rows = list(map(lambda x, w, y, z: (x, w, y, z), df['user name'].values,df['user screen name'].values, data['contents'], data['bios']))
 for i, (account, user, content, bio) in enumerate(tot_rows):
-  if len(content) <= 500:
+  meaningful_content = get_meaningful_text(content)
+  if len(meaningful_content) <= 500:
     if type(bio) != str:
-      bio = ''
-    outcomes.append({"account": account, "user": user, "content": {**{"text": content}, **classifier(content)[0]}, "bio": {**{"text": bio}, **classifier(bio)[0]}})
+      meaningful_bio = ''
+    else:
+      meaningful_bio = get_meaningful_text(bio)
+    outcomes.append({"account": account, "user": user, "content": {**{"text": content}, **classifier(meaningful_content)[0]}, "bio": {**{"text": bio}, **classifier(meaningful_bio)[0]}})
   if i%1000 == 0 and i != 0:
     split = i/1000
     get_csv_file(outcomes, split)
