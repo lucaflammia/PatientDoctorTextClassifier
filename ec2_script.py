@@ -30,7 +30,7 @@ def get_csv_file(data, check_bios, split=0):
     "Bio": [res['bio']['text'] for res in data], "Predicted Bio Type (Label / Score)": [f"{res['bio']['label']} / {res['bio']['score']}" for res in data]
   })
   if check_bios:
-    filename = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_check_medical_bios_inference_p{int(split)}.csv' if split != 0 else f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference.csv'
+    filename = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference_p{int(split)}.csv' if split != 0 else f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference.csv'
     out_df.to_csv(filename)
     if split > 1:
       filename_old = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference_p{int(split - 2)}.csv'
