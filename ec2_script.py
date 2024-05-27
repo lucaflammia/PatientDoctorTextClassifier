@@ -1,5 +1,7 @@
 import numpy as np
+import argparse
 import pandas as pd
+import time
 import re
 from transformers import pipeline
 import csv
@@ -15,27 +17,32 @@ FOLDERPATH = 'PulsarSearchesExport'
 TOPIC_CC = 'HavasGlobal-Lupus'
 TOPIC_SC = 'havas_global-lupus'
 
-df = pd.read_excel(f'{FOLDERPATH}/{TOPIC_CC}/107503-all-2024-05-17-07-39-05-1163478.xlsx')
+def get_data(df):
+    contents = df['content'].values
+    bios = df['bio'].values
+    data = {'contents': contents, 'bios': bios}
+    # bios = bios.where(bios.notna(), bios, None).values
+    return data
 
-df.drop_duplicates(subset=['content'], inplace=True)
-df.dropna(subset=['content'], inplace=True)
-
-contents = df['content'].values
-bios = df['bio'].values
-data = {'contents': contents, 'bios': bios}
-# bios = bios.where(bios.notna(), bios, None).values
-
-def get_csv_file(data, split=0):
+def get_csv_file(data, check_bios, split=0):
   out_df = pd.DataFrame({
     "Account": [res['account'] for res in data], "User": [res['user'] for res in data], "Content": [res['content']['text'] for res in data], "Predicted Content Type (Label / Score)": [f"{res['content']['label']} / {res['content']['score']}" for res in data], 
     "Bio": [res['bio']['text'] for res in data], "Predicted Bio Type (Label / Score)": [f"{res['bio']['label']} / {res['bio']['score']}" for res in data]
   })
-  filename = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference_p{int(split)}.csv' if split != 0 else f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference.csv'
-  out_df.to_csv(filename)
-  if split > 1:
-    filename_old = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference_p{int(split - 2)}.csv'
-    if(os.path.exists(filename_old) and os.path.isfile(filename_old)):
-      os.remove(filename_old)
+  if check_bios:
+    filename = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_check_medical_bios_inference_p{int(split)}.csv' if split != 0 else f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference.csv'
+    out_df.to_csv(filename)
+    if split > 1:
+      filename_old = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_medical_bios_inference_p{int(split - 2)}.csv'
+      if(os.path.exists(filename_old) and os.path.isfile(filename_old)):
+        os.remove(filename_old)
+  else:
+    filename = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference_p{int(split)}.csv' if split != 0 else f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference.csv'
+    out_df.to_csv(filename)
+    if split > 1:
+      filename_old = f'{FOLDERPATH}/{TOPIC_CC}/output/{TOPIC_SC}_export_inference_p{int(split - 2)}.csv'
+      if(os.path.exists(filename_old) and os.path.isfile(filename_old)):
+        os.remove(filename_old)
 
 def get_meaningful_text(text):
   """
@@ -53,19 +60,68 @@ def get_meaningful_text(text):
 
   return cleaned_text
 
-classifier = pipeline("text-classification", model=f"{HF_USERNAME}/{TASK}")
-outcomes = []
-tot_rows = list(map(lambda x, w, y, z: (x, w, y, z), df['user name'].values,df['user screen name'].values, data['contents'], data['bios']))
-for i, (account, user, content, bio) in enumerate(tot_rows):
-  meaningful_content = get_meaningful_text(content)
-  if len(meaningful_content) <= 500:
-    if type(bio) != str:
-      meaningful_bio = 'None'
-    else:
-      meaningful_bio = get_meaningful_text(bio)
-    outcomes.append({"account": account, "user": user, "content": {**{"text": content}, **classifier(meaningful_content)[0]}, "bio": {**{"text": bio}, **classifier(meaningful_bio)[0]}})
-  if i%1000 == 0 and i != 0:
-    split = i/1000
-    get_csv_file(outcomes, split)
-  if i == len(tot_rows) - 1:
-    get_csv_file(outcomes)
+def get_classification(df, check_bios=False):
+
+  classifier = pipeline("text-classification", model=f"{HF_USERNAME}/{TASK}")
+  outcomes = []
+  tot_rows = list(map(lambda x, w, y, z: (x, w, y, z), df['user name'].values,df['user screen name'].values, data['contents'], data['bios']))
+  for i, (account, user, content, bio) in enumerate(tot_rows):
+    meaningful_content = get_meaningful_text(content)
+    if len(meaningful_content) <= 500:
+      if type(bio) != str:
+        meaningful_bio = 'None'
+      else:
+        meaningful_bio = get_meaningful_text(bio)
+      outcomes.append({"account": account, "user": user, "content": {**{"text": content}, **classifier(meaningful_content)[0]}, "bio": {**{"text": bio}, **classifier(meaningful_bio)[0]}})
+    if i%1000 == 0 and i != 0:
+      split = i/1000
+      get_csv_file(outcomes, split, check_bios)
+    if i == len(tot_rows) - 1:
+      get_csv_file(outcomes, check_bios)
+
+def classify_medical_bios(df):
+  # List of common medical terms or keywords
+  medical_terms = [
+    'doctor', 'phd',  'nurse', 'hospital', 'clinic', 'medicine', 'surgery', 'pharmacy',
+    'treatment', 'diagnosis', 'therapy', 'health', 'disease', 'condition',
+    'symptom', 'patient', 'medical', 'prescription', 'vaccine', 'infection',
+    'cardiology', 'dermatology', 'neurology', 'oncology', 'pathology', 'radiology', 'cancer', 'lupus'
+  ]
+
+  # Create a regex pattern from the list of medical terms
+  pattern = re.compile(r'\b(?:' + '|'.join(medical_terms) + r')\b', re.IGNORECASE)
+  check_bio = []
+  data = get_data(df)
+  for bio in data['bios'][:10]:
+    if type(bio) != str or bio == '':
+      continue
+    for word in bio.lower().split(' '):
+      if contains_medical_reference(word, pattern):
+        check_bio.append(bio)
+  
+  df = df.loc[df['bio'].isin(check_bio) == True]
+  print(df)
+  get_classification(df, check_bios=True)
+
+# Function to check if a word contains any reference to the medical world
+def contains_medical_reference(word, pattern):
+  return bool(pattern.search(word))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ops', type=str, required=False)
+    args = parser.parse_args()
+    start_time = time.time()
+    
+    df = pd.read_excel(f'{FOLDERPATH}/{TOPIC_CC}/107503-all-2024-05-17-07-39-05-1163478.xlsx')
+    df.drop_duplicates(subset=['content'], inplace=True)
+    df.dropna(subset=['content'], inplace=True)
+
+    data = get_data(df)
+    if 'classification' in parser.parse_args().ops:
+        get_classification(df)
+    elif 'medical_bios' in parser.parse_args().ops:
+        classify_medical_bios(df)
+
+    print(f'execution terminated in {time.time() - start_time} seconds')
